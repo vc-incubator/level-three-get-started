@@ -1,0 +1,71 @@
+# Runs get-started-mac.sh on a GitHub-hosted Mac, as close to a new Mac as a runner allows:
+# a fresh home folder (no git name, no Claude, no gh sign-in) and a PATH without Homebrew,
+# the runner's Node or gh, so steps 2 to 4 take the no-Homebrew install path a student gets.
+# Not covered here: Apple's command line tools install (the runner has them), the browser
+# sign-in (GH_TOKEN stands in), and copying the private package (no access from this repo).
+name: Mac get-started test
+on:
+  workflow_dispatch:
+  push:
+    branches: ['ci/**']
+    paths: ['get-started-mac.sh', '.github/workflows/mac-test.yml']
+  pull_request:
+    paths: ['get-started-mac.sh', '.github/workflows/mac-test.yml']
+
+jobs:
+  mac:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-15, macos-14]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 25
+    env:
+      CLEAN_PATH: /usr/bin:/bin:/usr/sbin:/sbin
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: What this Mac has before the test
+        run: |
+          sw_vers; uname -m
+          for t in git node gh claude brew; do printf '%-7s %s\n' "$t" "$(PATH=$CLEAN_PATH:/usr/local/bin command -v $t || echo '-')"; done
+
+      - name: Fresh home folder
+        run: |
+          H="$RUNNER_TEMP/student"; mkdir -p "$H"; echo "H=$H" >> "$GITHUB_ENV"
+
+      - name: Check mode changes nothing
+        run: |
+          env -i HOME="$H" PATH="$CLEAN_PATH" TERM=xterm bash get-started-mac.sh --check | tee check.log
+          grep -q 'Check only: nothing was changed.' check.log
+
+      - name: First run, answering yes like a student
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # /dev/tty must exist for the questions: `script` gives the run a terminal and feeds it these answers.
+          printf 'y\ny\ny\nCI Student\nci-student@example.com\nn\nn\n' \
+            | env -i HOME="$H" PATH="$CLEAN_PATH" TERM=xterm GH_TOKEN="$GH_TOKEN" script -q /dev/null bash get-started-mac.sh > run1.log 2>&1 || true
+          cat run1.log
+          for want in 'ok: node v' 'ok: gh version' 'ok: claude' 'ok: CI Student <ci-student@example.com>' '6. Signed in to GitHub'; do
+            grep -q "$want" run1.log || { echo "::error::first run is missing: $want"; exit 1; }
+          done
+          # Expected here only: the runner cannot read the private package.
+          grep -q 'the package could not be copied' run1.log || echo "::warning::step 7 did not stop where expected"
+
+      - name: A new Terminal window finds node, gh and claude
+        run: |
+          # Login zsh like a new Terminal window: /etc/zprofile (path_helper) plus the student's own dotfiles.
+          out="$(env -i HOME="$H" TERM=xterm zsh -lic 'for t in node gh claude; do printf "%s=%s\n" $t "$(command -v $t || echo MISSING)"; done' 2>/dev/null)"
+          echo "$out"
+          if echo "$out" | grep -q MISSING; then echo "::error::a new Terminal window cannot find: $(echo "$out" | grep MISSING | cut -d= -f1 | xargs)"; exit 1; fi
+
+      - name: Second run does nothing new
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          printf 'n\nn\nn\nn\n' \
+            | env -i HOME="$H" PATH="$CLEAN_PATH" TERM=xterm GH_TOKEN="$GH_TOKEN" script -q /dev/null bash get-started-mac.sh > run2.log 2>&1 || true
+          cat run2.log
+          if grep -qE 'Downloading|Installing' run2.log; then echo "::error::the second run installed something again"; exit 1; fi
