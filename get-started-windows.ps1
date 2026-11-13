@@ -66,7 +66,8 @@ function Has-Winget {
 }
 function Latest-GitHub-Asset($repo, $pattern) {
   $rel = Invoke-RestMethod "https://api.github.com/repos/$repo/releases/latest" -Headers @{ 'User-Agent' = 'level-three-get-started' }
-  $a = $rel.assets | Where-Object { $_.name -match $pattern } | Select-Object -First 1
+  $assets = @($rel.assets)
+  $a = $assets | Where-Object { $_.name -match $pattern } | Select-Object -First 1
   if ($a) { return $a.browser_download_url }
   return $null
 }
@@ -75,8 +76,10 @@ function Installer-Url($key) {
   switch ($key) {
     'git'  { if ($arm) { return Latest-GitHub-Asset 'git-for-windows/git' '^Git-[\d.]+-arm64\.exe$' } else { return Latest-GitHub-Asset 'git-for-windows/git' '^Git-[\d.]+-64-bit\.exe$' } }
     'node' {
-      $lts = (Invoke-RestMethod 'https://nodejs.org/dist/index.json' | Where-Object { $_.lts } | Select-Object -First 1).version
-      if (-not $lts) { return $null }
+      # Assign first: Windows PowerShell 5.1 passes a JSON array down a pipe as ONE object, not item by item.
+      $all = Invoke-RestMethod 'https://nodejs.org/dist/index.json'
+      $lts = ($all | Where-Object { $_.lts } | Select-Object -First 1).version
+      if (-not $lts -or $lts -notmatch '^v\d+\.\d+\.\d+$') { return $null }
       return "https://nodejs.org/dist/$lts/node-$lts-$(Get-Arch).msi"
     }
     'gh'   { if ($arm) { return Latest-GitHub-Asset 'cli/cli' '_windows_arm64\.msi$' } else { return Latest-GitHub-Asset 'cli/cli' '_windows_amd64\.msi$' } }
