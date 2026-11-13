@@ -6,7 +6,8 @@
 #   Copies the package to $HOME\Agent-Team\student-package (or updates it if it is already there).
 #   Offers to start Set Up My Team, which takes it from there.
 #
-# It asks before every install. Windows may ask "Do you want to allow this app to make changes?"
+# It asks before every install. It uses winget when the PC has it, and otherwise downloads the
+# official installer (Git for Windows, nodejs.org, GitHub CLI releases). Windows may ask "Do you want to allow this app to make changes?"
 # for git, Node.js and gh: that box is Windows, and the answer is Yes.
 # Run it again any time: it skips whatever is already done.
 #
@@ -19,6 +20,8 @@
 $Check = ($args -contains '-Check') -or ($env:GET_STARTED_CHECK -eq '1')
 
 $ErrorActionPreference = 'Continue'
+$ProgressPreference = 'SilentlyContinue'   # Windows PowerShell 5.1 downloads are very slow with the progress bar on
+try { [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12 } catch { }
 $Repo   = 'vc-incubator/level-three-student-package'
 $Parent = Join-Path $HOME 'Agent-Team'
 $Dest   = Join-Path $Parent 'student-package'
@@ -49,12 +52,55 @@ function Node-Major {
   if ($v -match '^v(\d+)') { return [int]$Matches[1] }
   return 0
 }
-function Winget-Install($id, $what, $guide) {
-  if (-not (Has winget)) {
-    Stop-Here "winget is missing, so $what cannot be installed from here. Install or update 'App Installer' from the Microsoft Store, then run this again." $guide
+function Get-Arch {
+  if ($env:PROCESSOR_ARCHITECTURE -eq 'ARM64' -or $env:PROCESSOR_ARCHITEW6432 -eq 'ARM64') { return 'arm64' }
+  return 'x64'
+}
+function Has-Winget {
+  if (Has winget) { return $true }
+  # On a new or never-updated PC, App Installer can be present but not switched on for this user.
+  # This asks Windows to register it; it changes nothing if winget is not there at all.
+  try { Add-AppxPackage -RegisterByFamilyName -MainPackage Microsoft.DesktopAppInstaller_8wekyb3d8bbwe -ErrorAction Stop } catch { }
+  Refresh-Path
+  return (Has winget)
+}
+function Latest-GitHub-Asset($repo, $pattern) {
+  $rel = Invoke-RestMethod "https://api.github.com/repos/$repo/releases/latest" -Headers @{ 'User-Agent' = 'level-three-get-started' }
+  $a = $rel.assets | Where-Object { $_.name -match $pattern } | Select-Object -First 1
+  if ($a) { return $a.browser_download_url }
+  return $null
+}
+function Installer-Url($key) {
+  $arm = (Get-Arch) -eq 'arm64'
+  switch ($key) {
+    'git'  { if ($arm) { return Latest-GitHub-Asset 'git-for-windows/git' '^Git-[\d.]+-arm64\.exe$' } else { return Latest-GitHub-Asset 'git-for-windows/git' '^Git-[\d.]+-64-bit\.exe$' } }
+    'node' {
+      $lts = (Invoke-RestMethod 'https://nodejs.org/dist/index.json' | Where-Object { $_.lts } | Select-Object -First 1).version
+      if (-not $lts) { return $null }
+      return "https://nodejs.org/dist/$lts/node-$lts-$(Get-Arch).msi"
+    }
+    'gh'   { if ($arm) { return Latest-GitHub-Asset 'cli/cli' '_windows_arm64\.msi$' } else { return Latest-GitHub-Asset 'cli/cli' '_windows_amd64\.msi$' } }
   }
-  if (-not (Ask "Install $what with winget (from $id)?")) { Stop-Here "$what is needed." $guide }
-  winget install --id $id -e --source winget --accept-source-agreements --accept-package-agreements
+}
+function Install-Tool($id, $key, $what, $source, $guide) {
+  if (Has-Winget) {
+    if (-not (Ask "Install $what with winget (from $id)?")) { Stop-Here "$what is needed." $guide }
+    winget install --id $id -e --source winget --accept-source-agreements --accept-package-agreements
+    Refresh-Path
+    return
+  }
+  # No winget (common on Windows 10 that never updated its Store apps): use the official installer directly.
+  if (-not (Ask "Install $what? This downloads the official installer from $source and runs it.")) { Stop-Here "$what is needed." $guide }
+  $url = $null
+  try { $url = Installer-Url $key } catch { }
+  if (-not $url) { Stop-Here "could not find the $what installer to download. Check the internet connection and run this again." $guide }
+  $file = Join-Path $env:TEMP ([IO.Path]::GetFileName(([uri]$url).AbsolutePath))
+  Say "Downloading $([IO.Path]::GetFileName($file)) ..."
+  try { Invoke-WebRequest $url -OutFile $file -UseBasicParsing } catch { Stop-Here "the $what download did not finish. Check the internet connection and run this again." $guide }
+  Say "Installing $what. If Windows asks 'Do you want to allow this app to make changes?', answer Yes."
+  if ($file -like '*.msi') { Start-Process msiexec.exe -ArgumentList "/i `"$file`" /passive /norestart" -Wait }
+  else { Start-Process $file -ArgumentList '/VERYSILENT /NORESTART /SP- /SUPPRESSMSGBOXES' -Wait }
+  Remove-Item $file -ErrorAction SilentlyContinue
   Refresh-Path
 }
 
@@ -67,7 +113,7 @@ try {
   if (Has git) { Ok (git --version) }
   elseif ($Check) { Todo 'install Git for Windows' }
   else {
-    Winget-Install 'Git.Git' 'Git for Windows' 'sops\SOP-01-Check-your-computer.md, Step 4'
+    Install-Tool 'Git.Git' 'git' 'Git for Windows' 'gitforwindows.org' 'sops\SOP-01-Check-your-computer.md, Step 4'
     if (-not (Has git)) { Stop-Here 'git is still not found. Close this window, open a new PowerShell and run this again.' }
     Ok (git --version)
   }
@@ -78,7 +124,7 @@ try {
   if ($major -ge 20) { Ok "node $(node --version)" }
   elseif ($Check) { Todo "install Node.js (found: $(if ($major) { $major } else { 'none' }))" }
   else {
-    Winget-Install 'OpenJS.NodeJS.LTS' 'Node.js (long-term-support version)' 'sops\SOP-01-Check-your-computer.md, Step 3'
+    Install-Tool 'OpenJS.NodeJS.LTS' 'node' 'Node.js (long-term-support version)' 'nodejs.org' 'sops\SOP-01-Check-your-computer.md, Step 3'
     if ((Node-Major) -lt 20) { Stop-Here 'Node.js is still missing or older than 20. Close this window, open a new PowerShell and run this again.' }
     Ok "node $(node --version)"
   }
@@ -88,7 +134,7 @@ try {
   if (Has gh) { Ok ((gh --version) | Select-Object -First 1) }
   elseif ($Check) { Todo 'install the GitHub CLI' }
   else {
-    Winget-Install 'GitHub.cli' 'the GitHub CLI' 'sops\SOP-02-Set-up-your-folders.md, Step 6'
+    Install-Tool 'GitHub.cli' 'gh' 'the GitHub CLI' 'github.com/cli/cli' 'sops\SOP-02-Set-up-your-folders.md, Step 6'
     if (-not (Has gh)) { Stop-Here 'gh is still not found. Close this window, open a new PowerShell and run this again.' }
     Ok ((gh --version) | Select-Object -First 1)
   }
