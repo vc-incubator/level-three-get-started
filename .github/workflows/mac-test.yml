@@ -17,7 +17,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-15, macos-14]
+        os: [macos-15, macos-15-intel]
     runs-on: ${{ matrix.os }}
     timeout-minutes: 25
     env:
@@ -43,9 +43,21 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          # /dev/tty must exist for the questions: `script` gives the run a terminal and feeds it these answers.
-          printf 'y\ny\ny\nCI Student\nci-student@example.com\nn\nn\n' \
-            | env -i HOME="$H" PATH="$CLEAN_PATH" TERM=xterm GH_TOKEN="$GH_TOKEN" script -q /dev/null bash get-started-mac.sh > run1.log 2>&1 || true
+          # The questions read /dev/tty, so expect gives the run a terminal and answers each one as it appears.
+          cat > answer.exp <<'EXP'
+          set timeout 900
+          log_user 1
+          spawn env -i HOME=$env(H) PATH=$env(CLEAN_PATH) TERM=xterm GH_TOKEN=$env(GH_TOKEN) bash get-started-mac.sh
+          expect {
+            "Set Up My Team now?" { send "n\r"; exp_continue }
+            "\[y/N\]"          { send "y\r"; exp_continue }
+            "Your name:"         { send "CI Student\r"; exp_continue }
+            "Your email:"        { send "ci-student@example.com\r"; exp_continue }
+            timeout              { puts "\nTIMED OUT"; exit 2 }
+            eof
+          }
+          EXP
+          expect answer.exp > run1.log 2>&1 || true
           cat run1.log
           for want in 'ok: node v' 'ok: gh version' 'ok: claude' 'ok: CI Student <ci-student@example.com>' '6. Signed in to GitHub'; do
             grep -q "$want" run1.log || { echo "::error::first run is missing: $want"; exit 1; }
@@ -65,7 +77,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          printf 'n\nn\nn\nn\n' \
-            | env -i HOME="$H" PATH="$CLEAN_PATH" TERM=xterm GH_TOKEN="$GH_TOKEN" script -q /dev/null bash get-started-mac.sh > run2.log 2>&1 || true
+          sed -e 's/send "y\\r"/send "n\\r"/' answer.exp > again.exp
+          expect again.exp > run2.log 2>&1 || true
           cat run2.log
           if grep -qE 'Downloading|Installing' run2.log; then echo "::error::the second run installed something again"; exit 1; fi
