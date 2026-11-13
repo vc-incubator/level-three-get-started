@@ -47,12 +47,12 @@ jobs:
           cat > answer.exp <<'EXP'
           set timeout 900
           log_user 1
-          spawn env -i HOME=$env(H) PATH=$env(CLEAN_PATH) TERM=xterm GH_TOKEN=$env(GH_TOKEN) bash get-started-mac.sh
+          spawn env -i HOME=$env(H) PATH=$env(CLEAN_PATH) TERM=xterm GH_TOKEN=$env(GH_TOKEN) GIT_TERMINAL_PROMPT=0 bash get-started-mac.sh
           expect {
-            "Set Up My Team now?" { send "n\r"; exp_continue }
-            "\[y/N\]"          { send "y\r"; exp_continue }
-            "Your name:"         { send "CI Student\r"; exp_continue }
-            "Your email:"        { send "ci-student@example.com\r"; exp_continue }
+            -ex "Set Up My Team now?" { send "n\r"; exp_continue }
+            -ex "\[y/N\]"          { send "y\r"; exp_continue }
+            -ex "Your name:"         { send "CI Student\r"; exp_continue }
+            -ex "Your email:"        { send "ci-student@example.com\r"; exp_continue }
             timeout              { puts "\nTIMED OUT"; exit 2 }
             eof
           }
