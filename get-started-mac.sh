@@ -148,6 +148,19 @@ else
   ok "claude $(claude --version 2>/dev/null | head -n 1)"
 fi
 
+# New Terminal windows must find claude too. The installer puts it in ~/.local/bin but, run from here,
+# writes no startup file (seen on macOS 15, 13 Nov 2026), so a new window said "command not found: claude".
+if [ $CHECK -eq 0 ] && [ -x "$HOME/.local/bin/claude" ]; then
+  case "$(basename "${SHELL:-/bin/zsh}")" in
+    bash) rc="$HOME/.bash_profile" ;;
+    *)    rc="$HOME/.zprofile" ;;
+  esac
+  if ! grep -qs '\.local/bin' "$rc"; then
+    printf '\n# Added by Level 3 get-started: Claude Code lives here\nexport PATH="$HOME/.local/bin:$PATH"\n' >> "$rc" \
+      && ok "added ~/.local/bin to $(basename "$rc"), so new Terminal windows find claude"
+  fi
+fi
+
 # 5. git name and email (written into every commit and visible on GitHub)
 say "5. Your name and email for git"
 gname="$(git config --global user.name 2>/dev/null)"
@@ -167,6 +180,8 @@ fi
 # 6. Sign in to GitHub
 say "6. Signed in to GitHub"
 if has gh && gh auth status --hostname github.com >/dev/null 2>&1; then
+  # Signed in before this script ran: make sure git uses that sign-in too, or step 7 asks for a password.
+  [ $CHECK -eq 1 ] || gh auth setup-git --hostname github.com >/dev/null 2>&1
   ok "$(gh auth status --hostname github.com 2>&1 | grep -m1 -o 'account [^ ]*' || echo 'signed in')"
 elif [ $CHECK -eq 1 ]; then
   todo "sign in to GitHub"
