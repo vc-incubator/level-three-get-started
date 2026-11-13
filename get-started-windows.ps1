@@ -148,7 +148,10 @@ try {
   elseif ($Check) { Todo 'install Claude Code' }
   else {
     if (-not (Ask "Install Claude Code (Anthropic's official installer, claude.ai/install.ps1)?")) { Stop-Here 'Claude Code runs your team.' 'sops\SOP-01-Check-your-computer.md' }
-    Invoke-RestMethod https://claude.ai/install.ps1 | Invoke-Expression
+    # Run it in its own scope: the installer can set session-wide preferences (e.g. stop on any error)
+    # that would otherwise leak into the rest of this script.
+    & { Invoke-RestMethod https://claude.ai/install.ps1 | Invoke-Expression }
+    $ErrorActionPreference = 'Continue'
     Refresh-Path
     if (-not (Has claude)) { Stop-Here 'claude is still not found. Close this window, open a new PowerShell and run this again.' }
     Ok "claude $((claude --version) | Select-Object -First 1)"
@@ -170,7 +173,8 @@ try {
 
   # 6. Sign in to GitHub
   Say '6. Signed in to GitHub'
-  gh auth status --hostname github.com *> $null
+  # Through cmd so a 'not logged in' message on stderr can never become a PowerShell error; only the exit code counts.
+  cmd /c "gh auth status --hostname github.com >nul 2>&1"
   if ($LASTEXITCODE -eq 0) { Ok 'signed in' }
   elseif ($Check) { Todo 'sign in to GitHub' }
   else {
@@ -178,7 +182,7 @@ try {
     Say 'If it asks "Authenticate Git with your GitHub credentials?", answer Yes.'
     gh auth login --hostname github.com --git-protocol https --web
     if ($LASTEXITCODE -ne 0) { Stop-Here 'the GitHub sign-in did not finish.' 'sops\SOP-02-Set-up-your-folders.md, Step 6' }
-    gh auth setup-git --hostname github.com *> $null
+    cmd /c "gh auth setup-git --hostname github.com >nul 2>&1"
     Ok 'signed in'
   }
 
