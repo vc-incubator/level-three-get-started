@@ -79,7 +79,9 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          sed -e 's/send "y\\r"/send "n\\r"/' answer.exp > again.exp
+          # Like a new Terminal window: /usr/local/bin (where the installers put node and gh) is on PATH.
+          sed -e 's/send "y\\r"/send "n\\r"/' -e 's#PATH=$env(CLEAN_PATH)#PATH=/usr/local/bin:$env(CLEAN_PATH)#' answer.exp > again.exp
           expect again.exp > run2.log 2>&1 || true
           cat run2.log
           if grep -qE 'Downloading|Installing' run2.log; then echo "::error::the second run installed something again"; exit 1; fi
+          for want in 'ok: node v' 'ok: gh version' 'ok: claude' 'ok: CI Student'; do grep -q "$want" run2.log || { echo "::error::second run is missing: $want"; exit 1; }; done
