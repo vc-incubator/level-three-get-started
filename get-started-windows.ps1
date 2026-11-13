@@ -190,7 +190,11 @@ try {
   Say '6. Signed in to GitHub'
   # Through cmd so a 'not logged in' message on stderr can never become a PowerShell error; only the exit code counts.
   cmd /c "gh auth status --hostname github.com >nul 2>&1"
-  if ($LASTEXITCODE -eq 0) { Ok 'signed in' }
+  if ($LASTEXITCODE -eq 0) {
+    # Signed in before this script ran: make sure git uses that sign-in too, or step 7 asks for a password.
+    if (-not $Check) { cmd /c "gh auth setup-git --hostname github.com >nul 2>&1" }
+    Ok 'signed in'
+  }
   elseif ($Check) { Todo 'sign in to GitHub' }
   else {
     Say 'Next, GitHub shows an 8-character code here and opens your browser. Sign in with the GitHub account that accepted the Level 3 invitation, type the code there and press Authorize. The code goes only into that GitHub page, never into a chat.'
