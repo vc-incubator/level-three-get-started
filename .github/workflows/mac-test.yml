@@ -47,7 +47,7 @@ jobs:
           cat > answer.exp <<'EXP'
           set timeout 900
           log_user 1
-          spawn env -i HOME=$env(H) PATH=$env(CLEAN_PATH) TERM=xterm GH_TOKEN=$env(GH_TOKEN) GIT_TERMINAL_PROMPT=0 bash get-started-mac.sh
+          spawn env -i HOME=$env(H) SHELL=/bin/zsh USER=runner PATH=$env(CLEAN_PATH) TERM=xterm GH_TOKEN=$env(GH_TOKEN) GIT_TERMINAL_PROMPT=0 bash get-started-mac.sh
           expect {
             -ex "Set Up My Team now?" { send "n\r"; exp_continue }
             -ex "\[y/N\]"          { send "y\r"; exp_continue }
@@ -67,8 +67,10 @@ jobs:
 
       - name: A new Terminal window finds node, gh and claude
         run: |
+          echo "Startup files in the student's home after the run:"; ls -la "$H" | grep -E ' \.(zshrc|zprofile|zshenv|bash_profile|bashrc|profile)$' || echo '  none'
+          for f in .zshrc .zprofile .zshenv .bash_profile .profile; do [ -f "$H/$f" ] && { echo "--- $f"; cat "$H/$f"; }; done
           # Login zsh like a new Terminal window: /etc/zprofile (path_helper) plus the student's own dotfiles.
-          out="$(env -i HOME="$H" TERM=xterm zsh -lic 'for t in node gh claude; do printf "%s=%s\n" $t "$(command -v $t || echo MISSING)"; done' 2>/dev/null)"
+          out="$(env -i HOME="$H" SHELL=/bin/zsh TERM=xterm zsh -lic 'for t in node gh claude; do printf "%s=%s\n" $t "$(command -v $t || echo MISSING)"; done' 2>/dev/null)"
           echo "$out"
           if echo "$out" | grep -q MISSING; then echo "::error::a new Terminal window cannot find: $(echo "$out" | grep MISSING | cut -d= -f1 | xargs)"; exit 1; fi
 
