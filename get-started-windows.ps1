@@ -46,6 +46,15 @@ function Refresh-Path {
   $user    = [Environment]::GetEnvironmentVariable('Path', 'User')
   $env:Path = "$machine;$user;$(Join-Path $HOME '.local\bin')"
 }
+function Ensure-On-User-Path($dir) {
+  # The Claude installer puts claude.exe in ~\.local\bin but does not always add that folder to PATH
+  # (Windows 10 VM, 13 Nov 2026), so a new window could not find claude. Returns $true if it was added.
+  $user  = [Environment]::GetEnvironmentVariable('Path', 'User')
+  $parts = @(($user -split ';') | Where-Object { $_ })
+  if ($parts | Where-Object { $_.TrimEnd('\') -ieq $dir.TrimEnd('\') }) { return $false }
+  [Environment]::SetEnvironmentVariable('Path', (($parts + $dir) -join ';'), 'User')
+  return $true
+}
 function Node-Major {
   if (-not (Has node)) { return 0 }
   $v = (node --version) 2>$null
@@ -155,6 +164,12 @@ try {
     Refresh-Path
     if (-not (Has claude)) { Stop-Here 'claude is still not found. Close this window, open a new PowerShell and run this again.' }
     Ok "claude $((claude --version) | Select-Object -First 1)"
+  }
+
+  # New windows must find claude too, not just this one.
+  if ((Has claude) -and -not $Check) {
+    $claudeDir = Split-Path -Parent (Get-Command claude).Source
+    if (Ensure-On-User-Path $claudeDir) { Ok "added $claudeDir to your PATH, so new windows find claude" }
   }
 
   # 5. git name and email (written into every commit and visible on GitHub)
