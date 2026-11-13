@@ -13,8 +13,8 @@
 #
 #   -Check   report what is installed and what it would do, and change nothing.
 #
-# NOT YET VERIFIED on a brand-new PC (written 10 Nov 2026). If a step stops, the long version is
-# in sops\SOP-01-Check-your-computer.md and sops\SOP-02-Set-up-your-folders.md.
+# Tested on a new Windows 10 22H2 PC without winget, 13 Nov 2026 (through Set Up My Team to the board).
+# If a step stops, the long version is in sops\SOP-01-Check-your-computer.md and sops\SOP-02-Set-up-your-folders.md.
 
 # No param() block on purpose: it also runs as `irm <address> | iex`, where a param block does not apply.
 $Check = ($args -contains '-Check') -or ($env:GET_STARTED_CHECK -eq '1')
