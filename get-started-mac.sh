@@ -222,6 +222,9 @@ fi
 
 say "Your computer is ready, and the package is in $DEST."
 if [ -f "$SETUP" ] && ask "Open Set Up My Team now? It takes it from here, and it asks before it does anything."; then
-  exec bash "$SETUP" < /dev/tty
+  # Through `script`, which gives Set Up My Team a real terminal. Run straight from /dev/tty, Claude Code's
+  # sign-in crashed with "EINVAL: invalid argument, kqueue" (Bun cannot watch /dev/tty opened as a file on
+  # macOS). Proven on a macOS 15.8.2 Mac, 14 Nov 2026: with script, the sign-in and the rest of setup passed.
+  exec script -q /dev/null bash "$SETUP" < /dev/tty
 fi
 say "When you are ready, double-click Set Up My Team.command in Agent-Team > student-package > board, or open INSTALL.md."
